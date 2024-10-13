@@ -2,6 +2,7 @@ import pygame
 import numpy as np
 from abc import ABC, abstractmethod
 import time
+import subprocess
 
 
 class Button(ABC):
@@ -66,17 +67,21 @@ class Game:
         self.should_stop = False
         self.menu = True
         self.buttons = []
-        button_width = width // 3.5
-        button_height = height // 6
-        self.buttons.append(StartXButton((width - button_width) // 2, button_height + 1.3 * 0 * button_height, button_width, button_height, (255, 32, 32), (35, 35, 35), 'Start X'))
-        self.buttons.append(Start0Button((width - button_width) // 2, button_height + 1.3 * 1 * button_height, button_width, button_height, (255, 32, 32), (35, 35, 35), 'Start 0'))
-        self.buttons.append(ExitButton((width - button_width) // 2, button_height + 1.3 * 2 * button_height, button_width, button_height, (255, 32, 32), (35, 35, 35), 'Exit'))
+        self.button_width = width // 3.5
+        self.button_height = height // 6
+        self.buttons.append(StartXButton((width - self.button_width) // 2, self.button_height + 1.3 * 0 * self.button_height, self.button_width, self.button_height, (255, 32, 32), (35, 35, 35), 'Start X'))
+        self.buttons.append(Start0Button((width - self.button_width) // 2, self.button_height + 1.3 * 1 * self.button_height, self.button_width, self.button_height, (255, 32, 32), (35, 35, 35), 'Start 0'))
+        self.buttons.append(ExitButton((width - self.button_width) // 2, self.button_height + 1.3 * 2 * self.button_height, self.button_width, self.button_height, (255, 32, 32), (35, 35, 35), 'Exit'))
         self.pressed = False
         self.clock = pygame.time.Clock()
         self.player = 1
         self.map = np.zeros([3, 3], dtype="int32")
         self.last_move = 0
         self.amount_of_moves = 0
+        self.text_surface = None
+        self.text_rect = None
+        self.play_again = None
+        self.font = pygame.font.Font(None, 64)
 
 
     def handle_event(self):
@@ -87,6 +92,9 @@ class Game:
             if event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     self.pressed = True
+            if event.type == pygame.KEYDOWN:
+                if event.key == 27:
+                    self.should_stop = True
 
 
     def display_menu(self):
@@ -97,7 +105,7 @@ class Game:
                 self.should_stop = t[0]
                 self.menu = t[1]
                 self.player = t[2]
-                self.last_move = 0
+                self.last_move = time.time()
                 self.amount_of_moves = 0
                 self.map = np.zeros([3, 3], dtype="int32")
 
@@ -115,27 +123,26 @@ class Game:
 
     def get_current_pos(self):
         for i in range(3):
-            t = int(np.sum(self.map[:, i]))
+            t = np.sum(self.map[:, i])
             if t == 3:
-                return 1 * self.player
+                return self.player
             if t == -3:
-                return -1 * self.player
-        for i in range(3):
-            t = int(np.sum(self.map[i, :]))
+                return -self.player
+            t = np.sum(self.map[i, :])
             if t == 3:
-                return 1 * self.player
+                return self.player
             if t == -3:
-                return -1 * self.player
-        t = int(self.map[0, 0] + self.map[1, 1] + self.map[2, 2])
+                return -self.player
+        t = self.map[0, 0] + self.map[1, 1] + self.map[2, 2]
         if t == 3:
-            return 1 * self.player
+            return self.player
         if t == -3:
-            return -1 * self.player
-        t = int(self.map[2, 0] + self.map[1, 1] + self.map[0, 2])
+            return -self.player
+        t = self.map[2, 0] + self.map[1, 1] + self.map[0, 2]
         if t == 3:
-            return 1 * self.player
+            return self.player
         if t == -3:
-            return -1 * self.player
+            return -self.player
         return 0
 
     def max_min(self, current_move, res=0):
@@ -158,8 +165,6 @@ class Game:
         if self.player == -1:
             max_or_min = not max_or_min
         arr = sorted(arr, key=lambda x: x[1])
-        if res == 0:
-            print(arr)
         if max_or_min == 1:
             return arr[0][res]
         else:
@@ -170,9 +175,27 @@ class Game:
             return
         if self.player == -1 and self.amount_of_moves % 2 == 1:
             return
-        t = self.max_min(self.amount_of_moves)
+        if self.last_move + 0.3 > time.time() and self.play_again is None:
+            return
+        start = time.time()
+        command = ["./a.out"] 
+        for i in range(3):
+            for j in range(3):
+                command.append(str(self.map[i, j]))
+        command.append(str(self.amount_of_moves))
+        command.append(str(self.player))
+        result = subprocess.run(command, capture_output=True)
+        decoded_str = result.stdout.decode('utf-8')
+        # print("--",decoded_str, "--")
+        t = int(decoded_str)
+        # print(time.time() - start)
+        # start = time.time()
+        # t = self.max_min(self.amount_of_moves)
+        # print(t)
+        # print(time.time() - start)
         self.map[int(t / 3), int(t % 3)] = -self.player 
         self.amount_of_moves += 1
+        self.last_move = time.time()
 
     def display_game(self):
         x, y = pygame.mouse.get_pos()
@@ -181,27 +204,30 @@ class Game:
         top_left = ((self.width - side) // 2, (self.height - side) // 2)
         width = side / 80
         width = int(width)
+        color = (25, 25, 25)
+        if self.play_again is not None:
+            color = (140, 140, 140)
         if width < 2:
             width = 2
         for i in range(2):
             start = (top_left[0] + int(side * (i + 1) / 3), top_left[1])
-            pygame.draw.rect(self.screen, (25, 25, 25), (start[0] - width, start[1], width * 2, side), border_radius=width)
+            pygame.draw.rect(self.screen, color, (start[0] - width, start[1], width * 2, side), border_radius=width)
         for i in range(2):
             start = (top_left[0], top_left[1] + int(side * (i + 1) / 3))
-            pygame.draw.rect(self.screen, (25, 25, 25), (start[0], start[1] - width, side, width * 2), border_radius=width)
+            pygame.draw.rect(self.screen, color, (start[0], start[1] - width, side, width * 2), border_radius=width)
 
         self.make_move_ai()
         for i in range(3):
             for j in range(3):
                 if self.map[i, j] == -1:
-                    self.draw_circle(top_left, (25, 25, 25), width, side, i, j)
+                    self.draw_circle(top_left, color, width, side, i, j)
                 elif self.map[i, j] == 1:
-                    self.draw_cross(top_left, (25, 25, 25), width, side, i, j)
+                    self.draw_cross(top_left, color, width, side, i, j)
                 else:
-                    if time.time() >= self.last_move + 0.2:
+                    if time.time() >= self.last_move + 0.2 and self.get_current_pos() == 0:
                         step = side // 3
                         current_top_left = (top_left[0] + j * step, top_left[1] + i * step)
-                        if x >= current_top_left[0] + width * 2 and x <= current_top_left[0] + step - width * 2 and y >= current_top_left[1] + width * 2 and y <= current_top_left[1] + step - width * 2:
+                        if self.play_again is None and x >= current_top_left[0] + width * 2 and x <= current_top_left[0] + step - width * 2 and y >= current_top_left[1] + width * 2 and y <= current_top_left[1] + step - width * 2:
                             if self.player == 1 and self.amount_of_moves % 2 == 0:
                                 self.draw_cross(top_left, (200, 200, 200), width, side, i, j)
                                 if self.pressed:
@@ -214,6 +240,27 @@ class Game:
                                     self.map[i, j] = self.player
                                     self.last_move = time.time()
                                     self.amount_of_moves += 1
+        if self.play_again is None:
+            t = self.get_current_pos()
+            if t == 1 or t == -1 or self.amount_of_moves == 9:
+                self.play_again = Start0Button((self.width - int(self.button_width * 1.5)) // 2, (self.height - int(self.button_height * 1.5)) // 2, int(self.button_width * 1.5), int(self.button_height * 1.5), (255, 32, 32), (35, 35, 35), "Play Again")
+                if t == -1:
+                    self.text_surface = self.font.render("You have lost :(", True, (25, 25, 25))
+                elif t == 1:
+                    self.text_surface = self.font.render("You have won :)", True, (25, 25, 25))
+                else:
+                    self.text_surface = self.font.render("Good game :|", True, (25, 25, 25))
+                self.text_rect = self.text_surface.get_rect(center=(self.width // 2, int(self.height * 0.07)))
+
+        else:
+            self.screen.blit(self.text_surface, self.text_rect)
+            if time.time() > self.last_move + 1:
+                x, y = pygame.mouse.get_pos()
+                t = self.play_again.render(self.screen, x, y, self.pressed)
+                if t is not None:
+                    self.menu = True
+                    self.play_again = None
+    
 
 
     def start(self):
